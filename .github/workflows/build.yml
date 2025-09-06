@@ -1,0 +1,60 @@
+name: Build Suskisu Ultra (lime)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      KERNEL_REPO: https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git
+      KERNEL_BRANCH: lime-r-oss
+      ANYKERNEL_REPO: https://github.com/osm0sis/AnyKernel3.git
+      JOBS: 4
+
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Install required packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc bison flex libncurses5-dev libssl-dev wget zip unzip
+
+      - name: Get kernel source
+        run: |
+          git clone --depth 1 --branch $KERNEL_BRANCH $KERNEL_REPO kernel-src
+
+      - name: Download Google clang (prebuilt)
+        run: |
+          mkdir -p clang
+          CLANG_URL="https://commondatastorage.googleapis.com/chrome-infra/llvm-builds/clang/clang+llvm-16.0.0-x86_64-linux-gnu-ubuntu-20.04.tar.xz"
+          wget -qO /tmp/clang.tar.xz "$CLANG_URL"
+          tar -xf /tmp/clang.tar.xz -C clang --strip-components=1
+
+      - name: Add clang to PATH
+        run: echo "${{ github.workspace }}/clang/bin" >> $GITHUB_PATH
+
+      - name: Clone AnyKernel3
+        run: git clone --depth 1 $ANYKERNEL_REPO AnyKernel3
+
+      - name: Build kernel and package
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          cd kernel-src
+          make O=out lime_defconfig
+          make -j$(nproc) O=out CC=clang
+          cd ..
+          cp kernel-src/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+          cd AnyKernel3
+          zip -r9 Suskisu-Ultra-Lime.zip ./*
+          mv Suskisu-Ultra-Lime.zip $GITHUB_WORKSPACE/
+
+      - name: Upload artifact (flashable zip)
+        uses: actions/upload-artifact@v4
+        with:
+          name: suskisu-ultra-lime
+          path: Suskisu-Ultra-Lime.zip
